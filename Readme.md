@@ -17,7 +17,7 @@
    ```
 4. **Crear la siguiente variable de entorno para poder modificar volúmenes**
    ```console
-   echo -e "AIRFLOW_UID=$(id -u)" > .env
+   echo -e "AIRFLOW_UID=$(id -u)" >> .env
    ```
 5. **Crear y ejecutar los servicios establecidos en el `docker-compose.yml`**
 
