@@ -8,18 +8,25 @@
    ```docker
    cd proyecto_2
    ```
-3. **Crear la siguiente variable de entorno para poder modificar volúmenes**
+3. **Crear carpetas necesarias para los volúmenes**
+   ```console
+   mkdir ./airflow/logs
+   mkdir ./airflow/plugins
+   mkdir ./data/output_data
+   mkdir ./mlflow_artifacts
+   ```
+4. **Crear la siguiente variable de entorno para poder modificar volúmenes**
    ```console
    echo -e "AIRFLOW_UID=$(id -u)" > .env
    ```
-4. **Crear y ejecutar los servicios establecidos en el `docker-compose.yml`**
+5. **Crear y ejecutar los servicios establecidos en el `docker-compose.yml`**
 
    ```docker
    docker compose up
    ```
    Este proceso puede tomar varios minutos, espere a que termine de ejecutar para pasar al siguiente paso
 
-5. **Una vez se ha terminado de ejecutar el comando anterior, puede proceder a interactuar con los servicios a través de sus apis:**
+6. **Una vez se ha terminado de ejecutar el comando anterior, puede proceder a interactuar con los servicios a través de sus apis:**
 
    - **Airflow:** puerto 8080, las credenciales de acceso están definidas en el `.env`
    - **MLflow:** puerto 5000
