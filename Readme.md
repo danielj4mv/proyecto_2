@@ -22,6 +22,7 @@
 5. **Crear y ejecutar los servicios establecidos en el `docker-compose.yml`**
 
    ```docker
+   docker compose up airflow-init
    docker compose up
    ```
    Este proceso puede tomar varios minutos, espere a que termine de ejecutar para pasar al siguiente paso
