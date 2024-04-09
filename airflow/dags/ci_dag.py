@@ -16,7 +16,7 @@ from src.config.core import DATA1
 
 
 model_name = 'LR'
-experiment_name = "churn_prediction"
+experiment_name = "e1"
 reg_model = "LR/2"
 
 _root_dir = "/"
@@ -41,7 +41,7 @@ if not _root_dir:
     raise ValueError('PROJECT_PATH environment variable not set')
 
 default_args = {
-    'owner': 'Deffro',
+    'owner': 'user',
     'depends_on_past': False,
     'start_date': days_ago(0),
     'retries': 1,
@@ -49,9 +49,9 @@ default_args = {
 }
 
 dag = DAG(
-    'ci_pipeline',
+    'entrenamiento',
     default_args=default_args,
-    description='Continuous Integration Pipeline',
+    description='Proceso completo desde ingesta a registro',
     schedule_interval=timedelta(days=1),
 )
 
