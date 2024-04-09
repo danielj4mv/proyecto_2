@@ -20,8 +20,9 @@ x-airflow-common:
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
     # _PIP_ADDITIONAL_REQUIREMENTS: 'mlflow'
     MLFLOW_TRACKING_URI: "http://mlflow-webserver:5000"
-    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    #MLFLOW_S3_ENDPOINT_URL: "http://localhost:9000"
+    #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+    #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     #AWS_DEFAULT_REGION: ${AWS_REGION}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
@@ -30,6 +31,7 @@ x-airflow-common:
     - ./data:/opt/airflow/data
     - ./notebooks:/opt/airflow/notebooks
     - ./src:/opt/airflow/src
+    - ./mlflow_artifacts:/mlflow_artifacts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -63,16 +65,19 @@ services:
         image: mlflow_server
         ports:
           - "5000:5000"
-        environment:
+        #environment:
           # The following credentials allow connection to the S3 server.
-           AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-           AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+           #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+           #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+           #MLFLOW_S3_ENDPOINT_URL: "http://s3:${MINIO_PORT}"
            #AWS_DEFAULT_REGION: ${AWS_REGION}
 
         # The following command will launch the mlflow webserver on port 5000, with postgresql as the database
         # and S3 as the artifact storage.
         # The option "--serve-artifacts" will enable the serving of artifacts through mlflow as a proxy to the S3 server.
-        command: mlflow server --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-mlflow/${POSTGRES_DB} --default-artifact-root s3://${AWS_BUCKET_NAME}/ -h 0.0.0.0 -p 5000 --serve-artifacts
+        command: mlflow server --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-mlflow/${POSTGRES_DB} --default-artifact-root /mlflow_artifacts -h 0.0.0.0 -p 5000 --serve-artifacts
+        volumes:
+          - mlflow_artifacts:/mlflow_artifacts
         depends_on:
           - postgres-mlflow
 
@@ -80,8 +85,6 @@ services:
   ########################################################################################################
   # This container runs the jupyter lab.
   ########################################################################################################
-
-
 
 #  ########################################################################################################
 #  # This container runs the postgresql database for airflow.
@@ -243,3 +246,5 @@ volumes:
     mlflow-data:
     postgres-db-volume-mlflow:
     postgres-db-volume-airflow:
+    minio_data:
+    mlflow_artifacts:
