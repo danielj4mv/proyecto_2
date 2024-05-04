@@ -20,9 +20,9 @@ x-airflow-common:
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
     # _PIP_ADDITIONAL_REQUIREMENTS: 'mlflow'
     MLFLOW_TRACKING_URI: "http://mlflow-webserver:5000"
-    #MLFLOW_S3_ENDPOINT_URL: "http://localhost:9000"
-    #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-    #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    MLFLOW_S3_ENDPOINT_URL: "http://s3:${MINIO_PORT}"
     #AWS_DEFAULT_REGION: ${AWS_REGION}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
@@ -32,7 +32,7 @@ x-airflow-common:
     - ./notebooks:/opt/airflow/notebooks
     - ./src:/opt/airflow/src
     - ./mlflow_artifacts:/mlflow_artifacts
-  user: "${AIRFLOW_UID:-50000}:0"
+  user: "${AIRFLOW_UID:-1001}:0"
   depends_on:
     &airflow-common-depends-on
     #redis:
@@ -54,7 +54,7 @@ services:
           POSTGRES_DB: ${POSTGRES_DB}
         volumes:
           # The data folder is a named volume mounted to /var/lib/postgresql/data
-          - postgres-db-volume-mlflow:/var/lib/postgresql/data
+          - ./postgres-db-volume-mlflow:/var/lib/postgresql/data
 
 
   ########################################################################################################
@@ -64,22 +64,23 @@ services:
         build: ./dockerfiles/mlflow
         image: mlflow_server
         ports:
-          - "5000:5000"
-        #environment:
+          - "8081:5000"
+        environment:
           # The following credentials allow connection to the S3 server.
-           #AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-           #AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-           #MLFLOW_S3_ENDPOINT_URL: "http://s3:${MINIO_PORT}"
+           AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+           AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+           MLFLOW_S3_ENDPOINT_URL: "http://s3:${MINIO_PORT}"
            #AWS_DEFAULT_REGION: ${AWS_REGION}
 
         # The following command will launch the mlflow webserver on port 5000, with postgresql as the database
         # and S3 as the artifact storage.
         # The option "--serve-artifacts" will enable the serving of artifacts through mlflow as a proxy to the S3 server.
-        command: mlflow server --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-mlflow/${POSTGRES_DB} --default-artifact-root /mlflow_artifacts -h 0.0.0.0 -p 5000 --serve-artifacts
+        command: mlflow server --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-mlflow/${POSTGRES_DB} --default-artifact-root s3://mlflow/ --artifacts-destination s3://mlflow/ --serve-artifacts --host 0.0.0.0 --port 5000
         volumes:
-          - mlflow_artifacts:/mlflow_artifacts
+          - ./mlflow_artifacts:/mlflow_artifacts
         depends_on:
-          - postgres-mlflow
+          - postgres-mlflow 
+          - s3
 
 
   ########################################################################################################
@@ -96,7 +97,7 @@ services:
         POSTGRES_PASSWORD: airflow
         POSTGRES_DB: airflow
       volumes:
-        - postgres-db-volume-airflow:/var/lib/postgresql/data
+        - ./postgres-db-volume-airflow:/var/lib/postgresql/data
       healthcheck:
         test: ["CMD", "pg_isready", "-U", "airflow"]
         interval: 5s
@@ -107,17 +108,25 @@ services:
 #  ########################################################################################################
 # The redis - broker that forwards messages from scheduler to worker.
 #  ########################################################################################################
-    #redis:
-    #  image: redis:latest
-    #  expose:
-    #    - 6379
-    #  healthcheck:
-    #    test: ["CMD", "redis-cli", "ping"]
-    #    interval: 5s
-    #    timeout: 30s
-    #    retries: 50
-    #  restart: always
 
+    s3:
+      restart: always
+      image: minio/minio
+      container_name: mlflow_minio
+      volumes:
+        - ./minio_data:/data
+      ports:
+        - "${MINIO_PORT}:9000"
+        - "${MINIO_CONSOLE_PORT}:8089"
+      environment:
+        - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+        - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      command: server /data --console-address ":8089"
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+        interval: 30s
+        timeout: 20s
+        retries: 3
 
     airflow-webserver:
       <<: *airflow-common
@@ -151,28 +160,6 @@ services:
         airflow-init:
           condition: service_completed_successfully
 
-  # The worker that executes the tasks given by the scheduler.
-  #  airflow-worker:
-  #    <<: *airflow-common
-  #    command: celery worker
-  #    healthcheck:
-  #      test:
-  #        - "CMD-SHELL"
-  #        - 'celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
-  #      interval: 10s
-  #      timeout: 10s
-  #      retries: 5
-  #    environment:
-  #      <<: *airflow-common-env
-        # Required to handle warm shutdown of the celery workers properly
-        # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
-  #      DUMB_INIT_SETSID: "0"
-  #    restart: always
-  #    depends_on:
-  #      <<: *airflow-common-depends-on
-  #      airflow-init:
-  #        condition: service_completed_successfully
-
 
     airflow-triggerer:
       <<: *airflow-common
@@ -199,52 +186,9 @@ services:
         _AIRFLOW_WWW_USER_CREATE: 'true'
         _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
         _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
-      user: "${AIRFLOW_UID:-50000}:0"
+      user: "${AIRFLOW_UID:-1001}:0"
       # Creates a folder airflow in the same dir as docker-compose to store the dags, logs and plugins folders
       volumes:
         - ./airflow/:/sources
 
 
-    #flower:
-    #  <<: *airflow-common
-    #  command: celery flower
-    #  ports:
-    #    - 5555:5555
-    #  healthcheck:
-    #    test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
-    #    interval: 10s
-    #    timeout: 10s
-    #    retries: 5
-    #  restart: always
-
-
-    s3:
-      restart: always
-      image: minio/minio
-      container_name: mlflow_minio
-      volumes:
-        - ./minio_data:/data
-      ports:
-        - "${MINIO_PORT}:9000"
-        - "${MINIO_CONSOLE_PORT}:9001"
-      environment:
-        - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-        - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-        - MINIO_ADDRESS=${MINIO_ADDRESS}
-        - MINIO_PORT=${MINIO_PORT}
-        - MINIO_STORAGE_USE_HTTPS=${MINIO_STORAGE_USE_HTTPS}
-        - MINIO_CONSOLE_ADDRESS=${MINIO_CONSOLE_ADDRESS}
-      command: server /data
-      healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-        interval: 30s
-        timeout: 20s
-        retries: 3
-
-
-volumes:
-    mlflow-data:
-    postgres-db-volume-mlflow:
-    postgres-db-volume-airflow:
-    minio_data:
-    mlflow_artifacts:
