@@ -12,7 +12,7 @@ import mlflow.sklearn
 default_args = {
     'owner': 'user',
     'start_date': datetime(2024, 3, 28),
-    'retries': 1,
+    'retries': 10,
     'retry_delay': timedelta(seconds=5),
 }
 
@@ -41,15 +41,15 @@ def train_model(model, model_name):
     df = fetch_data()
     X = df.drop('cover_type', axis=1)
     y = df['cover_type']
+    from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
     with mlflow.start_run():
         model.fit(X_train, y_train)
         score = model.score(X_test, y_test)
         mlflow.log_metric("accuracy", score)
-        mlflow.sklearn.log_model(model, model_name)  # Asegúrate de que model_name sea el deseado
-        mlflow.set_tag("model_name", model_name)  # Opcional: Agregar un tag con el nombre
+        mlflow.sklearn.log_model(model, "model_name", registered_model_name=model_name)
 
+ 
 
 
 
